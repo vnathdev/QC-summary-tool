@@ -314,10 +314,24 @@ def bar_zone_stacked(df: pd.DataFrame, title: str):
         .reset_index(name="Count")
         .rename(columns={"qc_l1": "QC Status"})
     )
+    totals = grp.groupby("zone")["Count"].sum().rename("_total")
+    grp = grp.join(totals, on="zone")
+    grp["Pct"] = (grp["Count"] / grp["_total"] * 100).round(1)
+    grp["Label"] = grp["Pct"].apply(lambda p: f"{p:.0f}%" if p >= 5 else "")
+    grp = grp.drop(columns="_total")
+
     fig = px.bar(
         grp, x="zone", y="Count", color="QC Status",
         title=title, barmode="stack",
+        text="Label",
         color_discrete_map=QC_COLOR_MAP,
+        custom_data=["Pct"],
+    )
+    fig.update_traces(
+        textposition="inside",
+        insidetextanchor="middle",
+        textfont_size=11,
+        hovertemplate="<b>%{x}</b><br>%{fullData.name}: %{y} tickets (%{customdata[0]:.1f}%)<extra></extra>",
     )
     fig.update_layout(height=320, margin=dict(t=50, b=10, l=10, r=10),
                       xaxis_title="Zone", yaxis_title="Tickets", title_font_size=14)
@@ -533,58 +547,6 @@ def render_overview(city_data: dict):
                               yaxis={"categoryorder": "total ascending"},
                               legend_title="City")
             st.plotly_chart(fig, use_container_width=True)
-
-    # ── Row 3: Subcategory breakdown across cities ────────────
-    st.subheader("🏷️ Subcategory — QC Status Breakdown")
-    combined["_subcat"] = combined["complaint_subtype"].where(
-        combined["complaint_subtype"].notna() &
-        (combined["complaint_subtype"].astype(str).str.strip() != ""),
-        combined["complaint_type"],
-    )
-    sc_tmp = combined[
-        combined["_subcat"].notna() & (combined["_subcat"].astype(str).str.strip() != "")
-    ].copy()
-    if not sc_tmp.empty:
-        top_subcats = sc_tmp["_subcat"].value_counts().nlargest(12).index
-        sc_tmp = sc_tmp[sc_tmp["_subcat"].isin(top_subcats)]
-        sc_grp = (
-            sc_tmp.groupby(["_subcat", "qc_l1"])
-            .size()
-            .reset_index(name="Count")
-            .rename(columns={"_subcat": "Subcategory", "qc_l1": "QC Status"})
-        )
-        totals = sc_grp.groupby("Subcategory")["Count"].sum().rename("_total")
-        sc_grp = sc_grp.join(totals, on="Subcategory")
-        cat_order = (
-            sc_grp.drop_duplicates("Subcategory")
-            .sort_values("_total")["Subcategory"]
-            .tolist()
-        )
-        sc_grp["Pct"] = (sc_grp["Count"] / sc_grp["_total"] * 100).round(1)
-        sc_grp["Label"] = sc_grp["Pct"].apply(lambda p: f"{p:.0f}%" if p >= 5 else "")
-        sc_grp = sc_grp.drop(columns="_total")
-
-        fig = px.bar(
-            sc_grp, x="Count", y="Subcategory", color="QC Status",
-            orientation="h", barmode="stack",
-            title="Top 12 Subcategories — QC Status (All Cities)",
-            text="Label",
-            color_discrete_map=QC_COLOR_MAP,
-            custom_data=["Pct"],
-            labels={"Count": "Tickets"},
-        )
-        fig.update_traces(
-            textposition="inside",
-            insidetextanchor="middle",
-            textfont_size=11,
-            hovertemplate="<b>%{y}</b><br>%{fullData.name}: %{x} tickets (%{customdata[0]:.1f}%)<extra></extra>",
-        )
-        fig.update_layout(
-            height=460, margin=dict(t=50, b=10, l=10, r=10),
-            yaxis={"categoryorder": "array", "categoryarray": cat_order},
-            legend_title="QC Status",
-        )
-        st.plotly_chart(fig, use_container_width=True)
 
     # ── Summary table ──────────────────────────────────────────
     st.subheader("📊 Summary Table")
